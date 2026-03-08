@@ -7,6 +7,63 @@ import { getDefaultProfileEntries } from "@/lib/profile-defaults";
 
 let seeded = false;
 
+function readCurrentProfileMap(sqlite: ReturnType<typeof getSqlite>) {
+  const currentEntries = sqlite
+    .prepare("SELECT key, value FROM athlete_profile")
+    .all() as Array<{ key: string; value: string }>;
+
+  return new Map(currentEntries.map((entry) => [entry.key, entry.value]));
+}
+
+function hasProfileValue(value: string | undefined) {
+  return value !== undefined && value.trim().length > 0;
+}
+
+async function seedCutAnchors(sqlite: ReturnType<typeof getSqlite>) {
+  const profileMap = readCurrentProfileMap(sqlite);
+  const updatedAt = new Date().toISOString();
+  const earliestHeavyGymE1rm = sqlite
+    .prepare(
+      `
+        SELECT e1rm_history.value_kg AS value_kg, e1rm_history.date AS date
+        FROM e1rm_history
+        INNER JOIN sessions ON sessions.id = e1rm_history.session_id
+        WHERE e1rm_history.bench_standard = 'gym'
+          AND sessions.session_type = 'heavy'
+        ORDER BY e1rm_history.date ASC, e1rm_history.id ASC
+        LIMIT 1
+      `,
+    )
+    .get() as { value_kg: number; date: string } | undefined;
+
+  if (!hasProfileValue(profileMap.get("cut_start_bodyweight_kg"))) {
+    const currentBodyweight = profileMap.get("current_bodyweight_kg");
+    if (hasProfileValue(currentBodyweight)) {
+      await upsertProfileEntry({
+        key: "cut_start_bodyweight_kg",
+        value: currentBodyweight!,
+        updatedAt,
+      });
+    }
+  }
+
+  if (earliestHeavyGymE1rm && !hasProfileValue(profileMap.get("cut_start_e1rm_kg"))) {
+    await upsertProfileEntry({
+      key: "cut_start_e1rm_kg",
+      value: String(earliestHeavyGymE1rm.value_kg),
+      updatedAt,
+    });
+  }
+
+  if (earliestHeavyGymE1rm && !hasProfileValue(profileMap.get("cut_start_date"))) {
+    await upsertProfileEntry({
+      key: "cut_start_date",
+      value: earliestHeavyGymE1rm.date,
+      updatedAt,
+    });
+  }
+}
+
 export async function ensureSeedData() {
   if (seeded) {
     return;
@@ -32,10 +89,7 @@ export async function ensureSeedData() {
       });
     }
   } else {
-    const currentEntries = sqlite
-      .prepare("SELECT key, value FROM athlete_profile")
-      .all() as Array<{ key: string; value: string }>;
-    const currentMap = new Map(currentEntries.map((entry) => [entry.key, entry.value]));
+    const currentMap = readCurrentProfileMap(sqlite);
 
     for (const entry of defaultEntries) {
       const currentValue = currentMap.get(entry.key);
@@ -68,6 +122,8 @@ export async function ensureSeedData() {
     const csvText = fs.readFileSync(csvPath, "utf8");
     await importStrengthlogCsv(csvText);
   }
+
+  await seedCutAnchors(sqlite);
 
   seeded = true;
 }

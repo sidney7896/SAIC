@@ -8,3 +8,5 @@ dist
 data/bench-coach.sqlite
 data/bench-coach.sqlite-shm
 data/bench-coach.sqlite-wal
+*.tsbuildinfo
+CODEX-HANDOFF.md

@@ -79,9 +79,12 @@ export function getDefaultProfileEntries(): ProfileEntryInput[] {
     },
     { key: "current_phase", value: "cut" },
     { key: "current_bodyweight_kg", value: String(currentBodyweight) },
+    { key: "cut_start_bodyweight_kg", value: String(currentBodyweight) },
     { key: "bodyweight_target_kg", value: String(targetBodyweight) },
     { key: "bodyweight_trend", value: bullets.get("bodyweight_trend") ?? "losing" },
     { key: "is_in_caloric_deficit", value: "true" },
+    { key: "cut_start_e1rm_kg", value: "" },
+    { key: "cut_start_date", value: "" },
     { key: "test_day_date", value: testDayDate },
     { key: "last_training_date", value: lastTrainingDate },
     {

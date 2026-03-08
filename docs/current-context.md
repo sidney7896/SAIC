@@ -6,7 +6,7 @@ Build a private AI coaching system focused first on making Sidney the strongest 
 
 ## Current Phase
 
-Knowledge ingestion complete. Product definition complete. Engine design complete. T7 usable loop complete. T7 reviewed and approved. T8 test/regression slice complete, including the four approved fixes (S1, S2, S3, H4) and automated coverage for the rules engine plus cut-phase integration cases.
+Knowledge ingestion complete. Product definition complete. Engine design complete. T7 usable loop complete. T7 reviewed and approved. T8 test/regression slice complete. The post-T8 punch list slice is now complete for S4, H2, M1, and M4, with local validation green.
 
 ## What's Done
 
@@ -82,16 +82,48 @@ Knowledge ingestion complete. Product definition complete. Engine design complet
 - Automated coverage now spans e1RM math, comparable-session matching, deload triggers, safety gate paths, cut strength thresholds, phase resolution, progression, session generation, import heuristics, validation, and eval cases 1/2/3/4/5/7/10/11/15
 - Validation passed: `npm test` (85 tests) and `npm run build`
 
+### T9: Post-T8 punch list slice — DONE
+
+- Implemented S4 in `src/import/strengthlog.ts` so import stores one `e1rm_history` row per bench standard present in a session's working flat-bench sets
+- Implemented H2 in `src/db/seed.ts`, `src/db/queries/state.ts`, and the profile UI so cut-start e1RM/date anchors are stable and manually overrideable
+- Implemented M1 in `src/engine/safety.ts` and `src/engine/session-generator.ts` so a deload combined with Level 2 pain also applies the joint-friendly variant swap
+- Implemented M4 in `src/db/seed.ts`, `src/db/queries/state.ts`, and the profile UI so cut-start bodyweight is stable and manually overrideable
+- Added new automated coverage in `tests/import/strengthlog.test.ts`, `tests/engine/state.test.ts`, `tests/engine/safety.test.ts`, and `tests/engine/session-generator.test.ts`
+- Validation passed: `npm test` (95 tests), `npm run build`, and `npx tsc --noEmit`
+
+### Infrastructure: Production deployment — DONE
+
+- Domain: sidneydrost.com via Cloudflare (Full strict SSL, proxied)
+- Server: Hetzner 4GB RAM, IP 95.217.0.96, Ubuntu 24.04 LTS
+- Stack: Cloudflare → nginx (port 443, origin cert) → Next.js (port 3000 via PM2)
+- GitHub repo: github.com/sidney7896/SAIC (initial commit pushed with full T1-T8 codebase)
+- PM2 process manager with systemd auto-start on reboot
+- DNS A record: @ → 95.217.0.96 (proxied), plus coach subdomain
+- Site live and returning HTTP 200 at https://sidneydrost.com
+
+### Research pipeline — USER-DRIVEN
+
+- `FBAC-Bench-Research-Prompts.md` contains 18 research prompts across 13 domains
+- 3-stage pipeline: ChatGPT Deep Research → GPT Pro synthesis → Claude Opus final doc
+- User will run prompts through their own subscriptions (no API costs)
+
 ## What's Next
 
-### Post-T8 punch list
+### Remaining follow-ups
 
-- Immediate handoff: Claude should do a post-T8 review/planning pass, verify scope discipline against the completed test slice, and choose the next focused follow-up task.
-- Improve explanation specificity (H1) so recommendations surface the actual e1RM, progression adjustment, back-off %, and safety modifiers instead of generic cut-template language
-- Add a real cut-start e1RM anchor (H2) instead of using the oldest point in the recent history window
-- Store per-standard e1RM entries during import when multiple standards appear in the same session (S4)
-- Guard against zero-kg prescriptions when no usable gym e1RM exists (S5)
 - Decide whether to implement true same-session safety-override adjustments from `actual_result` or keep the current next-session mini-deload path as the only overshoot response
+- Decide whether mixed same-date multi-standard sessions should become multiple `RecentSession` state entries instead of collapsing to one session-level primary standard
+- Review and possibly implement S6 (`evaluateProgression` still reads `last_heavy_push` directly instead of using the comparable-session matcher)
+
+### LLM layer decision
+
+- User declined API usage costs. LLM explanation layer (`src/llm/`) is dead code with graceful fallback. Enriched rules-based explanation (H1) is the production path. No `.env` needed on server.
+
+### Infrastructure next steps
+
+- Deploy the accumulated local fixes to production (S5 + H1 + S4 + H2 + M1 + M4)
+- Set up deployment workflow (currently manual)
+- Consider adding a `www` CNAME redirect in Cloudflare
 
 ## Resolved Design Questions
 
@@ -110,8 +142,8 @@ All 6 open questions from engine-design.md resolved in ADR-005:
 - Historical bench data not tagged with bench_standard field (assumed gym no wraps)
 - Historical `day_type` for imported CSV sessions is still heuristic rather than explicit
 - Same-session safety-override adjustments from `actual_result.top_single` are still not implemented in the recommendation generator; T8 integration coverage for eval case 2 uses the existing next-session mini-deload path instead
-- Import only stores one e1RM per session even when multiple standards present (S4 — post-T8)
-- Zero e1RM not guarded in session generator (S5 — post-T8)
+- Mixed same-date sessions are still collapsed to one `RecentSession` when AthleteState is computed, even though `e1rm_history` now preserves per-standard rows
+- ~~Zero e1RM not guarded in session generator (S5)~~ FIXED
 - Wearable data integration scope not decided
 
 ## Key Files To Trust First
@@ -128,4 +160,4 @@ All 6 open questions from engine-design.md resolved in ADR-005:
 
 ## Last Updated
 
-2026-03-08, updated at `[end]` after T8 completion. Tests/build green, four approved fixes applied, next step is Claude post-T8 review and prioritization.
+2026-03-08. Post-T8 punch list slice completed for S4, H2, M1, and M4 with tests/build/typecheck green. Next: Claude review, then deployment of the accumulated local fixes.

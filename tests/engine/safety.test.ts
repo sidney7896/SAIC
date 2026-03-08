@@ -14,6 +14,7 @@ describe("checkSafetyGate", () => {
         action: "proceed",
         summary: "Pain and deload checks allow normal training.",
       },
+      preferJointFriendly: false,
       alerts: [],
       reason: "No safety gate modifications are required.",
     });
@@ -30,6 +31,7 @@ describe("checkSafetyGate", () => {
     );
 
     expect(result.decision).toBe("modify");
+    expect(result.preferJointFriendly).toBe(true);
     expect(result.painLevel).toEqual({
       level: 2,
       action: "modify",
@@ -71,6 +73,7 @@ describe("checkSafetyGate", () => {
     );
 
     expect(result.decision).toBe("deload");
+    expect(result.preferJointFriendly).toBe(false);
     expect(result.alerts[0]).toMatchObject({
       type: "deload_recommended",
       severity: "warning",
@@ -86,10 +89,49 @@ describe("checkSafetyGate", () => {
     );
 
     expect(result.decision).toBe("mini_deload");
+    expect(result.preferJointFriendly).toBe(false);
     expect(result.alerts[0]).toMatchObject({
       type: "mini_deload",
       severity: "warning",
     });
+  });
+
+  it("merges the Level 2 joint-friendly variant into a deload when pain is 3 to 4", () => {
+    const result = checkSafetyGate(
+      createSessionInput({
+        pain: {
+          score: 4,
+        },
+      }),
+      createAthleteState({
+        deload_triggers: {
+          e1rm_drop: {
+            active: true,
+            value: 3,
+            threshold: 2,
+            sessions_compared: ["2026-03-01", "2026-03-08"],
+          },
+          rpe_drift: {
+            active: true,
+            value: 1.5,
+            threshold: 1,
+            sessions_compared: ["2026-03-01", "2026-03-08"],
+          },
+          pain_trend: {
+            active: false,
+            value: 1,
+            threshold: 3,
+            sessions_compared: [],
+          },
+          triggers_met: 2,
+          deload_recommended: true,
+        },
+      }),
+    );
+
+    expect(result.decision).toBe("deload");
+    expect(result.preferJointFriendly).toBe(true);
+    expect(result.alerts[0]?.message).toContain("joint-friendly");
   });
 
   it("stops immediately when pain reaches the Level 3 threshold", () => {
@@ -126,6 +168,7 @@ describe("checkSafetyGate", () => {
     );
 
     expect(result.decision).toBe("stop");
+    expect(result.preferJointFriendly).toBe(false);
     expect(result.alerts[0]).toMatchObject({
       type: "pain_escalation",
       severity: "critical",

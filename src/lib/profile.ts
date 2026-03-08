@@ -6,6 +6,9 @@ export interface ProfileFormValues {
   goalStatement: string;
   currentPhase: string;
   currentBodyweightKg: string;
+  cutStartBodyweightKg: string;
+  cutStartE1rmKg: string;
+  cutStartDate: string;
   bodyweightTargetKg: string;
   bodyweightTrend: string;
   isInCaloricDeficit: boolean;
@@ -52,6 +55,9 @@ export function mapToProfileFormValues(map: Map<string, string>): ProfileFormVal
     goalStatement: map.get("goal_statement") ?? "",
     currentPhase: map.get("current_phase") ?? "cut",
     currentBodyweightKg: map.get("current_bodyweight_kg") ?? "",
+    cutStartBodyweightKg: map.get("cut_start_bodyweight_kg") ?? "",
+    cutStartE1rmKg: map.get("cut_start_e1rm_kg") ?? "",
+    cutStartDate: map.get("cut_start_date") ?? "",
     bodyweightTargetKg: map.get("bodyweight_target_kg") ?? "",
     bodyweightTrend: map.get("bodyweight_trend") ?? "losing",
     isInCaloricDeficit: map.get("is_in_caloric_deficit") === "true",

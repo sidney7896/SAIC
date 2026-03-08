@@ -1,4 +1,5 @@
 import type { NewE1rmHistoryRow, NewSessionRow, NewSetRow } from "@/db/schema";
+import type { BenchStandard } from "@/engine/types";
 import { getSqlite, runInTransaction } from "@/db/client";
 import { calculateE1rm } from "@/engine/e1rm";
 import { parseCsvLine } from "@/lib/csv";
@@ -63,15 +64,56 @@ function inferBenchStandard(notes: string) {
 
 function getPreferredE1rmRow(rows: StrengthlogCsvRow[]) {
   const flatRows = rows
-    .filter((row) => row.variation === "flat" && !row.warmup && row.reps > 0)
-    .sort((left, right) => right.load_kg - left.load_kg);
+    .filter(
+      (row) =>
+        row.variation === "flat" &&
+        !row.warmup &&
+        row.reps > 0 &&
+        row.rir !== null,
+    )
+    .sort((left, right) => {
+      if (left.reps === 1 && right.reps !== 1) {
+        return -1;
+      }
 
-  const bestSingle = flatRows.find((row) => row.reps === 1 && row.rir !== null);
-  if (bestSingle) {
-    return bestSingle;
+      if (left.reps !== 1 && right.reps === 1) {
+        return 1;
+      }
+
+      return right.load_kg - left.load_kg;
+    });
+
+  return flatRows[0] ?? null;
+}
+
+function getE1rmRowsPerStandard(rows: StrengthlogCsvRow[]) {
+  const rowsByStandard = new Map<BenchStandard, StrengthlogCsvRow[]>();
+
+  for (const row of rows) {
+    if (row.variation !== "flat" || row.warmup || row.reps <= 0) {
+      continue;
+    }
+
+    const standard = inferBenchStandard(row.notes);
+    const standardRows = rowsByStandard.get(standard) ?? [];
+    standardRows.push(row);
+    rowsByStandard.set(standard, standardRows);
   }
 
-  return flatRows.find((row) => row.reps > 1 && row.rir !== null) ?? null;
+  const e1rmRows: Array<{ row: StrengthlogCsvRow; standard: BenchStandard }> =
+    [];
+
+  for (const [standard, standardRows] of rowsByStandard) {
+    const preferredRow = getPreferredE1rmRow(standardRows);
+    if (preferredRow) {
+      e1rmRows.push({
+        row: preferredRow,
+        standard,
+      });
+    }
+  }
+
+  return e1rmRows;
 }
 
 export function parseStrengthlogCsv(csvText: string): StrengthlogCsvRow[] {
@@ -226,25 +268,24 @@ export async function importStrengthlogCsv(
         importedRows += 1;
       }
 
-      const e1rmSource = getPreferredE1rmRow(sessionRows);
-      if (e1rmSource) {
+      for (const e1rmSource of getE1rmRowsPerStandard(sessionRows)) {
         const result = calculateE1rm(
-          e1rmSource.load_kg,
-          e1rmSource.reps,
-          e1rmSource.rir,
+          e1rmSource.row.load_kg,
+          e1rmSource.row.reps,
+          e1rmSource.row.rir,
         );
 
         if (result.valueKg !== null && result.confidence !== null) {
           const e1rmRecord: NewE1rmHistoryRow = {
             sessionId,
             date,
-            benchStandard: inferBenchStandard(e1rmSource.notes),
+            benchStandard: e1rmSource.standard,
             valueKg: result.valueKg,
             method: result.method,
             confidence: result.confidence,
-            sourceWeightKg: e1rmSource.load_kg,
-            sourceReps: e1rmSource.reps,
-            sourceRir: e1rmSource.rir,
+            sourceWeightKg: e1rmSource.row.load_kg,
+            sourceReps: e1rmSource.row.reps,
+            sourceRir: e1rmSource.row.rir,
           };
 
           insertE1rm.run(

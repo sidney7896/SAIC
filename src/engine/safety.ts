@@ -10,11 +10,13 @@ export function checkSafetyGate(
   state: AthleteState,
 ): SafetyAction {
   const painLevel = applyPainProtocol(input.pain.score);
+  const deloadNeedsJointFriendlyVariant = painLevel.level === 2;
 
   if (painLevel.level >= 4) {
     return {
       decision: "stop",
       painLevel,
+      preferJointFriendly: false,
       alerts: [
         {
           severity: "critical",
@@ -31,6 +33,7 @@ export function checkSafetyGate(
     return {
       decision: "stop",
       painLevel,
+      preferJointFriendly: false,
       alerts: [
         {
           severity: "critical",
@@ -47,15 +50,22 @@ export function checkSafetyGate(
     return {
       decision: "deload",
       painLevel,
+      preferJointFriendly: deloadNeedsJointFriendlyVariant,
       alerts: [
         {
           severity: "warning",
           type: "deload_recommended",
-          message: "Two or more deload triggers are active.",
-          action_required: "Run a 1-week deload with volume down 40% and RPE down 1.",
+          message: deloadNeedsJointFriendlyVariant
+            ? "Two or more deload triggers are active, and pain is in the 3–4/10 band. Deload and use a joint-friendly back-off variant."
+            : "Two or more deload triggers are active.",
+          action_required: deloadNeedsJointFriendlyVariant
+            ? "Run a 1-week deload with volume down 40%, RPE down 1, and switch the back-off work to a joint-friendly variation."
+            : "Run a 1-week deload with volume down 40% and RPE down 1.",
         },
       ],
-      reason: "The 2-of-3 deload rule has fired.",
+      reason: deloadNeedsJointFriendlyVariant
+        ? "The 2-of-3 deload rule has fired and Level 2 pain also requires a joint-friendly variant."
+        : "The 2-of-3 deload rule has fired.",
     };
   }
 
@@ -63,6 +73,7 @@ export function checkSafetyGate(
     return {
       decision: "mini_deload",
       painLevel,
+      preferJointFriendly: false,
       alerts: [
         {
           severity: "warning",
@@ -79,6 +90,7 @@ export function checkSafetyGate(
     return {
       decision: "modify",
       painLevel,
+      preferJointFriendly: true,
       alerts: [
         {
           severity: "warning",
@@ -98,6 +110,7 @@ export function checkSafetyGate(
       action: "proceed",
       summary: "Pain and deload checks allow normal training.",
     },
+    preferJointFriendly: false,
     alerts: [],
     reason: "No safety gate modifications are required.",
   };

@@ -176,6 +176,24 @@ Use this as the shared execution plan between Claude and Codex. Keep statuses cu
   - Test results are recorded in `docs/implementation-notes.md`
   - `npm test` passes, `npm run build` passes
 
+### T9. Apply the post-T8 punch list fixes
+
+- Status: `done`
+- Goal: close the remaining correctness gaps from the post-T8 review without widening the product scope.
+- Completed: 2026-03-08
+- What was done:
+  - Implemented **S4** in `src/import/strengthlog.ts` so import stores one `e1rm_history` row per bench standard present in a session
+  - Implemented **H2** in `src/db/seed.ts`, `src/db/queries/state.ts`, and the profile UI so cut-start e1RM/date anchors are stable and user-overridable
+  - Implemented **M1** in `src/engine/safety.ts` and `src/engine/session-generator.ts` so deload plus Level 2 pain also applies the joint-friendly back-off variant swap
+  - Implemented **M4** in `src/db/queries/state.ts`, `src/db/seed.ts`, and the profile UI so cut-start bodyweight is stable and user-overridable
+  - Added new regression coverage for import multi-standard e1RM, stable cut anchors, and the deload-plus-pain merge
+- Validation notes:
+  - `npm test` passed with 95 tests across 13 files
+  - `npm run build` passed
+  - `npx tsc --noEmit` passed
+- Next handoff:
+  - Claude should review the completed slice, then decide whether the next follow-up is deployment or deeper multi-standard state aggregation for mixed same-date sessions
+
 ## Optional Later Tasks
 
 - Broaden bench support with accessory logic

@@ -297,6 +297,7 @@ export interface PainLevel {
 export interface SafetyAction {
   decision: "proceed" | "modify" | "deload" | "mini_deload" | "stop";
   painLevel: PainLevel;
+  preferJointFriendly: boolean;
   alerts: Alert[];
   reason: string;
 }
@@ -326,4 +327,23 @@ export interface ValidationResult<T> {
   success: boolean;
   data?: T;
   errors: string[];
+}
+
+/** Intermediate reasoning data collected during session generation for explanation enrichment. */
+export interface ReasoningContext {
+  baseE1rm: number;
+  safetyDecision: SafetyAction["decision"];
+  progressionAction?: ProgressionAction;
+  backoffPct?: string;
+  opportunityDay?: boolean;
+  badDay?: boolean;
+  topSingleBeforeAdjustments?: number;
+  topSingleAfterAdjustments?: number;
+  sleepHours?: number;
+  subjectiveReadiness?: number;
+  cutStrength?: CutStrengthResult | null;
+  e1rmTrend?: string;
+  e1rmConfidence?: Confidence;
+  lastComparableDate?: string;
+  lastComparableE1rm?: number;
 }

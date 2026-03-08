@@ -85,4 +85,92 @@ describe("Strengthlog import heuristics", () => {
       },
     ]);
   });
+
+  it("stores one e1RM row per bench standard when a session contains gym and IPF singles", async () => {
+    const db = await loadFreshDb("strengthlog-multi-standard-e1rm");
+    const csv = [
+      CSV_HEADER,
+      "2026-03-01,flat,100,1,2,false,false,touch and go single",
+      "2026-03-01,flat,95,1,2,false,false,paused ipf single",
+    ].join("\n");
+
+    await db.strengthlog.importStrengthlogCsv(csv);
+
+    const e1rmRows = db.client
+      .getSqlite()
+      .prepare(`
+        SELECT date, bench_standard, source_weight_kg
+        FROM e1rm_history
+        ORDER BY bench_standard ASC
+      `)
+      .all() as Array<Record<string, unknown>>;
+
+    expect(e1rmRows).toEqual([
+      {
+        date: "2026-03-01",
+        bench_standard: "gym",
+        source_weight_kg: 100,
+      },
+      {
+        date: "2026-03-01",
+        bench_standard: "ipf",
+        source_weight_kg: 95,
+      },
+    ]);
+  });
+
+  it("stores a single e1RM row when only one bench standard is present", async () => {
+    const db = await loadFreshDb("strengthlog-single-standard-e1rm");
+    const csv = [
+      CSV_HEADER,
+      "2026-03-01,flat,97.5,1,2,false,false,touch and go single",
+      "2026-03-01,flat,100,1,1,false,false,touch and go single",
+    ].join("\n");
+
+    await db.strengthlog.importStrengthlogCsv(csv);
+
+    const e1rmRows = db.client
+      .getSqlite()
+      .prepare(`
+        SELECT bench_standard, source_weight_kg
+        FROM e1rm_history
+      `)
+      .all() as Array<Record<string, unknown>>;
+
+    expect(e1rmRows).toEqual([
+      {
+        bench_standard: "gym",
+        source_weight_kg: 100,
+      },
+    ]);
+  });
+
+  it("falls back to Epley when a session has no singles but has multi-rep sets with RIR", async () => {
+    const db = await loadFreshDb("strengthlog-epley-fallback");
+    const csv = [
+      CSV_HEADER,
+      "2026-03-01,flat,77.5,5,2,false,false,volume work",
+      "2026-03-01,flat,80,4,1,false,false,volume work",
+    ].join("\n");
+
+    await db.strengthlog.importStrengthlogCsv(csv);
+
+    const e1rmRows = db.client
+      .getSqlite()
+      .prepare(`
+        SELECT bench_standard, method, source_weight_kg, source_reps, source_rir
+        FROM e1rm_history
+      `)
+      .all() as Array<Record<string, unknown>>;
+
+    expect(e1rmRows).toEqual([
+      {
+        bench_standard: "gym",
+        method: "epley",
+        source_weight_kg: 80,
+        source_reps: 4,
+        source_rir: 1,
+      },
+    ]);
+  });
 });

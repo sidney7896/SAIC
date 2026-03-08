@@ -70,6 +70,23 @@ function determineTrend(changePct: number) {
   return "flat" as const;
 }
 
+function readProfileNumber(map: Map<string, string>, key: string) {
+  const rawValue = map.get(key)?.trim();
+  if (!rawValue) {
+    return undefined;
+  }
+
+  const parsed = Number(rawValue);
+
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readProfileDate(map: Map<string, string>, key: string) {
+  const rawValue = map.get(key)?.trim();
+
+  return rawValue ? rawValue : undefined;
+}
+
 function buildEstimateForStandard(
   standard: BenchStandard,
   recentSessions: RecentSession[],
@@ -163,7 +180,8 @@ export async function computeAthleteState(): Promise<AthleteState | null> {
   const latestSession = recentSessions[0];
   const latestBodyweight =
     sessions.find((session) => session.bodyweightKg !== null)?.bodyweightKg ??
-    Number(profileMap.get("current_bodyweight_kg") ?? 70);
+    readProfileNumber(profileMap, "current_bodyweight_kg") ??
+    70;
   const bodyweightRows = sessions
     .filter((session) => session.bodyweightKg !== null)
     .slice(0, 2)
@@ -210,7 +228,15 @@ export async function computeAthleteState(): Promise<AthleteState | null> {
     (session) => session.bench_standard === "gym" && session.e1rm_kg !== undefined,
   );
   const currentGymE1rm = e1rm.gym?.value_kg ?? 0;
-  const cutStartE1rm = gymHistory[gymHistory.length - 1]?.e1rm_kg ?? currentGymE1rm;
+  const fallbackCutStartSession = gymHistory[gymHistory.length - 1];
+  const cutStartE1rm =
+    readProfileNumber(profileMap, "cut_start_e1rm_kg") ??
+    fallbackCutStartSession?.e1rm_kg ??
+    currentGymE1rm;
+  const cutStartDate =
+    readProfileDate(profileMap, "cut_start_date") ??
+    fallbackCutStartSession?.date ??
+    today;
   const cutDropPct =
     cutStartE1rm > 0
       ? Number((((cutStartE1rm - currentGymE1rm) / cutStartE1rm) * 100).toFixed(1))
@@ -258,11 +284,14 @@ export async function computeAthleteState(): Promise<AthleteState | null> {
                     : "stable",
             weeks_in_cut: Math.max(
               1,
-              Math.round(daysBetween(gymHistory[gymHistory.length - 1]?.date ?? today, today) / 7),
+              Math.round(daysBetween(cutStartDate, today) / 7),
             ),
-            bw_start_kg: Number(profileMap.get("current_bodyweight_kg") ?? latestBodyweight),
+            bw_start_kg:
+              readProfileNumber(profileMap, "cut_start_bodyweight_kg") ??
+              readProfileNumber(profileMap, "current_bodyweight_kg") ??
+              latestBodyweight,
             bw_current_kg: latestBodyweight,
-            bw_target_kg: Number(profileMap.get("bodyweight_target_kg") ?? 65),
+            bw_target_kg: readProfileNumber(profileMap, "bodyweight_target_kg") ?? 65,
             e1rm_at_cut_start_kg: cutStartE1rm,
           }
         : undefined,

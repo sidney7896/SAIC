@@ -43,10 +43,8 @@ Full code-level audit of every engine module, import pipeline, database layer, u
 - `getPreferredE1rmRow` returns a single row. If a session has both paused (IPF) and TnG (gym) singles, only the heavier one gets an e1RM entry. IPF e1RM tracking will have gaps.
 - **Fix:** Compute and store an e1RM for each bench standard present in the session's working sets.
 
-**S5. Zero e1RM produces zero-kg prescriptions (src/engine/progression.ts line 15, src/engine/session-generator.ts line 45)**
-- Severity: MEDIUM
-- `state.e1rm.gym?.value_kg ?? 0` produces 0 when no gym e1RM history exists. All percentage-based calculations yield 0 kg. The warmup has a floor but exercises don't.
-- **Fix:** Guard in `generateSession`: return "data insufficient" recommendation when `baseE1rm <= 0`.
+**S5. ~~Zero e1RM produces zero-kg prescriptions~~ — FIXED (2026-03-08)**
+- Early return guard in `generateSession` when `baseE1rm <= 0`. Returns "data insufficient" recommendation with critical `missing_data` alert.
 
 **S6. `evaluateProgression` doesn't use comparable session matcher (src/engine/session-generator.ts lines 116–118)**
 - Severity: LOW-MEDIUM
@@ -80,11 +78,9 @@ The slice is good enough to lock in with tests. The findings below are improveme
 
 #### HIGH — should be addressed before or during T8
 
-**H1. Explanation quality is too generic (review rubric: "hidden logic" risk)**
-- File: `src/engine/explanation.ts`
-- The `buildRuleExplanation` function produces the same tradeoff string for every cut session ("Biasing toward strength preservation and fatigue control…") and a generic `rule_applied` ("Used the cut template for a push heavy session."). It does not surface which specific data points drove the prescription: the e1RM value used, whether progression logic fired (+2.5 / hold / −2.5), the comparable session basis, the opportunity-day or bad-day adjustment, or the back-off percentage applied.
-- The explanation is structurally correct (all five fields populated) but fails the review rubric's explainability standard: "Can the recommendation be traced from inputs → rule → output?" The answer right now is "partially, via the state_snapshot, but not via the explanation text."
-- **Fix scope:** Enrich `buildRuleExplanation` to interpolate the actual values — e1RM, progression action, back-off %, sleep/readiness adjustments, and pain modifications. This can happen in T8 or as a focused follow-up.
+**H1. ~~Explanation quality is too generic~~ — FIXED (2026-03-08)**
+- Added `ReasoningContext` interface. Session generator collects intermediate decision data (progression action, opportunity/bad day, backoff %, cut strength, e1RM trend/confidence) and passes it to `buildRuleExplanation`.
+- Rewrote `explanation.ts` to interpolate actual computed values into every explanation field. This is now the production explanation path (LLM layer is dead code — user declined API costs).
 
 **H2. Cut-start e1RM anchor is the oldest session in the 60-row window, not a real cut-start value**
 - File: `src/db/queries/state.ts`, line 213
@@ -158,7 +154,35 @@ The slice is good enough to lock in with tests. The findings below are improveme
 11. **Validation:** Valid input passes; missing fields caught; out-of-range values caught
 12. **Integration (eval cases 1, 2, 3, 4, 5, 7, 10, 11, 15):** These map directly to the cut phase. Cases 6, 8, 9 can be partially tested. Cases 12–14 are for phases not yet deepened.
 
-### Exact Next Step
+## Infrastructure Deployment (2026-03-08)
+
+### What was done
+
+- Provisioned Hetzner VPS (4GB RAM, Ubuntu 24.04, IP 95.217.0.96)
+- Installed nginx, certbot, Node.js v24.14.0 (via n), PM2
+- Configured UFW firewall (ports 22, 80, 443)
+- Set up Cloudflare DNS for sidneydrost.com (A record @ → 95.217.0.96, proxied)
+- Created Cloudflare origin certificates, configured nginx SSL (Full strict mode)
+- Pushed full T1-T8 codebase to GitHub (sidney7896/SAIC)
+- Cloned, installed, and built Next.js app on server at /var/www/coach
+- Started app via PM2 with systemd auto-start
+- Verified HTTP 200 at https://sidneydrost.com
+
+### Outstanding
+
+- `.env` not needed on server — LLM API layer is dead code (user declined API costs)
+- No CI/CD pipeline — deploys are manual (git pull + build + pm2 restart)
+- No `www` CNAME redirect configured yet
+- Research pipeline (18 prompts in FBAC-Bench-Research-Prompts.md) — user will run through own subscriptions
+- S5 + H1 code changes need to be deployed to production
+
+### Exact next step
+
+Deploy S5 + H1 changes: push to GitHub, then on server `git pull && npm run build && pm2 restart all`. Next punch list priority: S4, H2, or M1.
+
+---
+
+### Exact Next Step (T8, historical)
 
 Hand off to Codex for T8. Codex should:
 1. **Apply three pre-test fixes first** (in this order):

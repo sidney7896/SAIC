@@ -183,5 +183,52 @@ describe("generateSession (cut phase)", () => {
       type: "deload_recommended",
       severity: "warning",
     });
+    expect(recommendation.exercises[1]).toMatchObject({
+      exercise: "flat_bench",
+      variation: "touch_and_go",
+    });
+  });
+
+  it("uses a joint-friendly back-off variant when deload and Level 2 pain coincide", () => {
+    const recommendation = generateSession(
+      createSessionInput({
+        pain: {
+          score: 4,
+        },
+      }),
+      createAthleteState({
+        deload_triggers: {
+          e1rm_drop: {
+            active: true,
+            value: 3,
+            threshold: 2,
+            sessions_compared: [],
+          },
+          rpe_drift: {
+            active: true,
+            value: 1,
+            threshold: 1,
+            sessions_compared: [],
+          },
+          pain_trend: {
+            active: false,
+            value: 1,
+            threshold: 3,
+            sessions_compared: [],
+          },
+          triggers_met: 2,
+          deload_recommended: true,
+        },
+      }),
+    );
+
+    expect(recommendation.session_type).toBe("deload");
+    expect(recommendation.exercises[1]).toMatchObject({
+      exercise: "spoto_press",
+      variation: "joint_friendly",
+      sets: 2,
+      target_rir: 3,
+    });
+    expect(recommendation.alerts[0]?.message).toContain("joint-friendly");
   });
 });

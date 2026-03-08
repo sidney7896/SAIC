@@ -10,6 +10,7 @@ import type {
   AthleteState,
   Alert,
   ExercisePrescription,
+  ReasoningContext,
 } from "@/engine/types";
 
 function buildWarmup(targetWeightKg: number) {
@@ -24,9 +25,24 @@ function buildWarmup(targetWeightKg: number) {
   ];
 }
 
-function modifyForDeload(exercises: ExercisePrescription[]) {
+function modifyForDeload(
+  exercises: ExercisePrescription[],
+  preferJointFriendly: boolean,
+) {
   return exercises.map((exercise) => ({
     ...exercise,
+    exercise:
+      preferJointFriendly &&
+      exercise.order === 2 &&
+      exercise.exercise === "flat_bench"
+        ? "spoto_press"
+        : exercise.exercise,
+    variation:
+      preferJointFriendly &&
+      exercise.order === 2 &&
+      exercise.exercise === "flat_bench"
+        ? "joint_friendly"
+        : exercise.variation,
     sets: Math.max(2, Math.round(exercise.sets * 0.6)),
     target_rir: Number((exercise.target_rir + 1).toFixed(1)),
     target_rir_range: [
@@ -42,10 +58,60 @@ export function generateSession(
 ): SessionRecommendation {
   const safety = checkSafetyGate(input, state);
   const currentBlock = state.block_type ?? "accumulation";
-  const baseE1rm = state.e1rm.gym?.value_kg ?? 90;
+  const baseE1rm = state.e1rm.gym?.value_kg ?? 0;
   const alerts: Alert[] = [...safety.alerts];
   const exercises: ExercisePrescription[] = [];
   let sessionType: SessionRecommendation["session_type"] = input.session_type;
+
+  // S5: Guard against zero or unusable e1RM — prevents 0 kg prescriptions
+  if (baseE1rm <= 0) {
+    return {
+      date: input.date,
+      phase: state.current_phase,
+      session_type: "transition",
+      day_type: input.day_type,
+      warmup: [],
+      exercises: [],
+      rest_between_exercises: "No bench work prescribed — insufficient e1RM data.",
+      alerts: [
+        {
+          severity: "critical",
+          type: "missing_data",
+          message:
+            "No gym-standard e1RM available. The engine cannot calculate weights without a baseline. Log at least one bench session with a top single and RIR to establish an e1RM.",
+          action_required:
+            "Log a bench session with a top single (weight x 1 rep with an RIR estimate) so the engine can compute a baseline e1RM.",
+        },
+      ],
+      explanation: {
+        summary:
+          "Cannot generate a prescription because no gym-standard e1RM exists yet.",
+        key_inputs: [
+          "Gym e1RM: unavailable",
+          `Phase: ${state.current_phase}`,
+          `Pain score: ${input.pain.score}/10`,
+        ],
+        rule_applied:
+          "The engine requires a non-zero gym e1RM to calculate all percentage-based weights. Without one, it returns a data-insufficient recommendation.",
+        tradeoff:
+          "Safety over utility — prescribing 0 kg weights would be worse than prescribing nothing.",
+        monitor_next: [
+          "Log one bench session with a top single and RIR to establish the baseline.",
+        ],
+      },
+      state_snapshot: {
+        e1rm_gym_kg: 0,
+        e1rm_ipf_kg: state.e1rm.ipf?.value_kg,
+        e1rm_gym_wraps_kg: state.e1rm.gym_wraps?.value_kg,
+        deload_triggers_met: state.deload_triggers.triggers_met,
+        pain_score: input.pain.score,
+        bodyweight_kg: state.bodyweight_kg,
+        phase: state.current_phase,
+        block: state.block_type,
+        phase_week: state.phase_week,
+      },
+    };
+  }
 
   if (safety.decision === "stop") {
     const recommendation: SessionRecommendation = {
@@ -77,10 +143,25 @@ export function generateSession(
       },
     };
 
-    recommendation.explanation = buildRuleExplanation(recommendation);
+    recommendation.explanation = buildRuleExplanation(recommendation, {
+      baseE1rm,
+      safetyDecision: safety.decision,
+    });
 
     return recommendation;
   }
+
+  // H1: Collect reasoning context for explanation enrichment
+  const reasoning: ReasoningContext = {
+    baseE1rm,
+    safetyDecision: safety.decision,
+    sleepHours: input.sleep_hours,
+    subjectiveReadiness: input.subjective_readiness,
+    e1rmTrend: state.e1rm.gym?.trend,
+    e1rmConfidence: state.e1rm.gym?.confidence,
+    lastComparableDate: state.last_heavy_push?.date,
+    lastComparableE1rm: state.last_heavy_push?.e1rm_kg,
+  };
 
   if (state.current_phase === "cut") {
     if (input.day_type === "pull" || input.session_type === "light") {
@@ -116,27 +197,34 @@ export function generateSession(
       const progression = state.last_heavy_push
         ? evaluateProgression(state.last_heavy_push, targetRir)
         : { action: "hold" as const, changeKg: 0, reason: "No comparable heavy session yet." };
-      let topSingleTarget =
-        computeTopSingleTarget(
-          state,
-          currentBlock,
-          state.phase_week ?? 1,
-        ) + progression.changeKg;
+      reasoning.progressionAction = progression;
 
-      if (
+      const rawTopSingle = computeTopSingleTarget(
+        state,
+        currentBlock,
+        state.phase_week ?? 1,
+      );
+      let topSingleTarget = rawTopSingle + progression.changeKg;
+      reasoning.topSingleBeforeAdjustments = topSingleTarget;
+
+      const isOpportunityDay =
         input.sleep_hours !== undefined &&
         input.sleep_hours >= 8 &&
         input.subjective_readiness !== undefined &&
         input.subjective_readiness >= 4 &&
-        input.pain.score === 0
-      ) {
+        input.pain.score === 0;
+      reasoning.opportunityDay = isOpportunityDay;
+
+      if (isOpportunityDay) {
         topSingleTarget += 2.5;
       }
 
-      if (
+      const isBadDay =
         (input.sleep_hours !== undefined && input.sleep_hours < 6) ||
-        (input.subjective_readiness !== undefined && input.subjective_readiness <= 2)
-      ) {
+        (input.subjective_readiness !== undefined && input.subjective_readiness <= 2);
+      reasoning.badDay = isBadDay;
+
+      if (isBadDay) {
         topSingleTarget -= 2.5;
       }
 
@@ -145,6 +233,10 @@ export function generateSession(
       }
 
       topSingleTarget = Math.min(roundToNearestPlate(baseE1rm), roundToNearestPlate(topSingleTarget));
+      reasoning.topSingleAfterAdjustments = topSingleTarget;
+
+      const backoffWeight = computeBackoffWeightByPhase(baseE1rm, currentBlock, state.current_phase);
+      reasoning.backoffPct = `${((backoffWeight / baseE1rm) * 100).toFixed(0)}%`;
 
       exercises.push({
         order: 1,
@@ -166,7 +258,7 @@ export function generateSession(
         variation: safety.decision === "modify" ? "joint_friendly" : "touch_and_go",
         sets: safety.decision === "mini_deload" ? 3 : safety.decision === "modify" ? 2 : 4,
         reps: 4,
-        target_weight_kg: computeBackoffWeightByPhase(baseE1rm, currentBlock, state.current_phase),
+        target_weight_kg: backoffWeight,
         target_rir: safety.decision === "modify" ? 2.5 : 2,
         target_rir_range: safety.decision === "modify" ? [2, 3] : [1.5, 2.5],
         rest_sec: 180,
@@ -192,6 +284,7 @@ export function generateSession(
     }
 
     const cutStrength = evaluateCutStrength(state);
+    reasoning.cutStrength = cutStrength;
     if (cutStrength?.threshold === "warning" || cutStrength?.threshold === "red_flag") {
       alerts.push({
         severity: cutStrength.threshold === "red_flag" ? "critical" : "warning",
@@ -239,7 +332,9 @@ export function generateSession(
   }
 
   const finalizedExercises =
-    safety.decision === "deload" ? modifyForDeload(exercises) : exercises;
+    safety.decision === "deload"
+      ? modifyForDeload(exercises, safety.preferJointFriendly)
+      : exercises;
 
   const recommendation: SessionRecommendation = {
     date: input.date,
@@ -276,7 +371,7 @@ export function generateSession(
     },
   };
 
-  recommendation.explanation = buildRuleExplanation(recommendation);
+  recommendation.explanation = buildRuleExplanation(recommendation, reasoning);
 
   return recommendation;
 }

@@ -54,6 +54,18 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
             <input className="mt-2 w-full rounded-xl border border-stone-300 px-3 py-2" name="currentBodyweightKg" defaultValue={values.currentBodyweightKg} type="number" step="0.1" />
           </label>
           <label className="text-sm text-stone-700">
+            Cut Start Bodyweight (kg)
+            <input className="mt-2 w-full rounded-xl border border-stone-300 px-3 py-2" name="cutStartBodyweightKg" defaultValue={values.cutStartBodyweightKg} type="number" step="0.1" />
+          </label>
+          <label className="text-sm text-stone-700">
+            Cut Start e1RM (kg)
+            <input className="mt-2 w-full rounded-xl border border-stone-300 px-3 py-2" name="cutStartE1rmKg" defaultValue={values.cutStartE1rmKg} type="number" step="0.1" />
+          </label>
+          <label className="text-sm text-stone-700">
+            Cut Start Date
+            <input className="mt-2 w-full rounded-xl border border-stone-300 px-3 py-2" name="cutStartDate" defaultValue={values.cutStartDate} type="date" />
+          </label>
+          <label className="text-sm text-stone-700">
             Target Bodyweight (kg)
             <input className="mt-2 w-full rounded-xl border border-stone-300 px-3 py-2" name="bodyweightTargetKg" defaultValue={values.bodyweightTargetKg} type="number" step="0.1" />
           </label>
